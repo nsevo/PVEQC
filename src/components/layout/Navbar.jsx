@@ -5,7 +5,8 @@ import {
   Bars3Icon,
   XMarkIcon,
   ServerIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  CloudIcon
 } from '@heroicons/react/24/outline';
 
 const menuItems = [
@@ -18,6 +19,11 @@ const menuItems = [
     icon: <ShieldCheckIcon className="w-5 h-5" />,
     label: "Firewall Rules",
     path: "/firewall"
+  },
+  {
+    icon: <CloudIcon className="w-5 h-5" />,
+    label: "Cloud-Init",
+    path: "/cloud-init"
   }
 ];
 

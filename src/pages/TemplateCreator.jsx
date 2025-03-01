@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
   ServerIcon,
-  CircleStackIcon,
   CpuChipIcon,
+  CircleStackIcon,
   SignalIcon,
+  ComputerDesktopIcon,
+  TrashIcon,
   ClipboardIcon,
   CheckIcon,
   CommandLineIcon,
-  CloudArrowDownIcon,
-  ComputerDesktopIcon,
-  TrashIcon
+  CloudArrowDownIcon
 } from '@heroicons/react/24/outline';
 
 const TemplateCreator = () => {
@@ -36,6 +36,15 @@ const TemplateCreator = () => {
   useEffect(() => {
     localStorage.setItem('pveConfig', JSON.stringify(formData));
   }, [formData]);
+
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    const newValue = type === 'checkbox' ? checked : value;
+    setFormData(prev => ({
+      ...prev,
+      [name]: newValue
+    }));
+  };
 
   const osOptions = [
     {
@@ -84,19 +93,26 @@ const TemplateCreator = () => {
     'debian-11.qcow2': 'wget https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-amd64.qcow2 -O debian-11.qcow2',
     'centos-stream-9.qcow2': 'wget https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2 -O centos-stream-9.qcow2',
     'centos-stream-8.qcow2': 'wget https://cloud.centos.org/centos/8-stream/x86_64/images/CentOS-Stream-GenericCloud-8-latest.x86_64.qcow2 -O centos-stream-8.qcow2',
-    'rocky-9.qcow2': 'wget https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2 -O rocky-9.qcow2',
-    'rocky-8.qcow2': 'wget https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2 -O rocky-8.qcow2',
+    'rocky-9.qcow2': 'wget https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2 -O rocky-9.qcow2',
+    'rocky-8.qcow2': 'wget https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud.latest.x86_64.qcow2 -O rocky-8.qcow2',
     'almalinux-9.qcow2': 'wget https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2 -O almalinux-9.qcow2',
     'almalinux-8.qcow2': 'wget https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2 -O almalinux-8.qcow2'
   };
 
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    const newValue = type === 'checkbox' ? checked : value;
-    setFormData(prev => ({
-      ...prev,
-      [name]: newValue
-    }));
+  const copyToClipboard = async (text, key) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (key === 'merged') {
+        setMergedCopied(true);
+      } else {
+        setCopiedStates(prev => ({
+          ...prev,
+          [key]: true
+        }));
+      }
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
   };
 
   const generateCommands = () => {
@@ -178,22 +194,6 @@ const TemplateCreator = () => {
     });
 
     return commands;
-  };
-
-  const copyToClipboard = async (text, key) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      if (key === 'merged') {
-        setMergedCopied(true);
-      } else {
-        setCopiedStates(prev => ({
-          ...prev,
-          [key]: true
-        }));
-      }
-    } catch (err) {
-      console.error('Copy failed:', err);
-    }
   };
 
   const commands = generateCommands();
@@ -366,7 +366,6 @@ const TemplateCreator = () => {
             </div>
           </div>
 
-          {/* 合并的命令 */}
           <div className="bg-[#232f3e] border border-[#1a1f29]">
             <div className="px-4 py-3 border-b border-[#2d3952]">
               <div className="flex items-center justify-between">
