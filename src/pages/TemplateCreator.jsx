@@ -9,7 +9,8 @@ import {
   ClipboardIcon,
   CheckIcon,
   CommandLineIcon,
-  CloudArrowDownIcon
+  CloudArrowDownIcon,
+  KeyIcon
 } from '@heroicons/react/24/outline';
 
 const TemplateCreator = () => {
@@ -18,7 +19,8 @@ const TemplateCreator = () => {
     osType: 'ubuntu-22.04.qcow2',
     storage: 'local-lvm',
     bridge: 'vmbr0',
-    enableQemuAgent: true
+    enableQemuAgent: true,
+    enableRootSsh: false
   };
 
   const [formData, setFormData] = useState(() => {
@@ -37,13 +39,29 @@ const TemplateCreator = () => {
     localStorage.setItem('pveConfig', JSON.stringify(formData));
   }, [formData]);
 
+  useEffect(() => {
+    // Reset copied states when formData changes
+    setCopiedStates({});
+    setMergedCopied(false);
+  }, [formData]);
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : value;
-    setFormData(prev => ({
-      ...prev,
-      [name]: newValue
-    }));
+    
+    if (name === 'enableQemuAgent' && !checked) {
+      // 如果禁用 QEMU Guest Agent，同时也禁用 Root SSH
+      setFormData(prev => ({
+        ...prev,
+        [name]: newValue,
+        enableRootSsh: false
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: newValue
+      }));
+    }
   };
 
   const osOptions = [
@@ -116,9 +134,9 @@ const TemplateCreator = () => {
   };
 
   const generateCommands = () => {
-    const { vmId, osType, storage, bridge, enableQemuAgent } = formData;
+    const { vmId, osType, storage, bridge, enableQemuAgent, enableRootSsh } = formData;
     const osName = osType.split('.')[0].replace(/[^a-zA-Z0-9-]/g, '') + '-template';
-    
+
     const commands = [
       {
         desc: 'Download OS Image',
@@ -127,23 +145,98 @@ const TemplateCreator = () => {
       }
     ];
 
-    if (enableQemuAgent) {
-      const guestAgentInstallCmd = osType.startsWith('rocky') || osType.startsWith('almalinux')
-        ? `virt-customize -a /root/${osType} --run-command 'dnf install -y qemu-guest-agent cloud-init && systemctl enable qemu-guest-agent.service'`
-        : `virt-customize -a /root/${osType} --install qemu-guest-agent --run-command 'systemctl enable qemu-guest-agent.service'`;
+    if (enableQemuAgent || enableRootSsh) {
+      commands.push({
+        desc: 'Install libguestfs-tools',
+        cmd: 'apt update && apt install -y libguestfs-tools',
+        icon: <CommandLineIcon className="w-5 h-5" />
+      });
+    }
 
-      commands.push(
-        {
-          desc: 'Install libguestfs-tools',
-          cmd: 'apt update && apt install -y libguestfs-tools',
-          icon: <CommandLineIcon className="w-5 h-5" />
-        },
-        {
-          desc: 'Install & Enable QEMU Guest Agent',
-          cmd: guestAgentInstallCmd,
-          icon: <ComputerDesktopIcon className="w-5 h-5" />
-        }
-      );
+    if (enableQemuAgent) {
+      commands.push({
+        desc: 'Install & Enable QEMU Guest Agent',
+        cmd: `virt-customize -a ${osType} --install qemu-guest-agent`,
+        icon: <ComputerDesktopIcon className="w-5 h-5" />
+      });
+    }
+
+    if (enableRootSsh) {
+      commands.push({
+        desc: 'Configure Root SSH Access',
+        cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
+# Detect operating system type
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  OS_TYPE=$(echo "$ID" | tr "[:upper:]" "[:lower:]")  # Convert to lowercase using tr
+else
+  OS_TYPE=unknown
+fi
+
+# 1. Configure cloud-init (Common settings for all distributions)
+if [ -f /etc/cloud/cloud.cfg ]; then
+  # 1.1 Modify main configuration
+  sed -i "s/disable_root: true/disable_root: false/" /etc/cloud/cloud.cfg
+  sed -i "/^disable_root:.*/d" /etc/cloud/cloud.cfg
+  sed -i "s/ssh_pwauth:.*$/ssh_pwauth: true/" /etc/cloud/cloud.cfg
+  
+  # 1.2 Create high-priority override configuration
+  mkdir -p /etc/cloud/cloud.cfg.d
+  cat > /etc/cloud/cloud.cfg.d/99-enable-root.cfg << EOF
+disable_root: false
+ssh_pwauth: true
+EOF
+fi
+
+# 2. SSH Configuration (Base settings)
+cp -a /etc/ssh/sshd_config /etc/ssh/sshd_config.backup-$(date +%Y%m%d)
+
+# 2.1 Enable root login and password authentication
+sed -i "s/^#*PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config
+sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
+
+# 3. Distribution-specific configurations
+case $OS_TYPE in
+  ubuntu|debian)
+    # 3.1 Ubuntu/Debian specific settings
+    if [ -f /etc/pam.d/sshd ]; then
+      # Ensure correct PAM authentication configuration
+      sed -i "s/^@include common-auth/#@include common-auth/" /etc/pam.d/sshd
+      echo "@include common-auth" >> /etc/pam.d/sshd
+    fi
+    
+    # Handle Ubuntu cloud-init networking configuration
+    if [ -f /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg ]; then
+      mv /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg.disabled
+    fi
+    ;;
+    
+  centos|rocky|almalinux|rhel)
+    # 3.2 RHEL-based systems configuration
+    # Ensure password authentication is enabled in RedHat config
+    if [ -f /etc/cloud/cloud.cfg.d/50-redhat.cfg ]; then
+      sed -i "s/^ssh_pwauth:.*$/ssh_pwauth: true/" /etc/cloud/cloud.cfg.d/50-redhat.cfg
+    fi
+    
+    # Preserve SSH host keys
+    if [ -d /etc/cloud/cloud.cfg.d ]; then
+      echo "ssh_deletekeys: false" > /etc/cloud/cloud.cfg.d/99-ssh-keep-keys.cfg
+    fi
+    ;;
+esac
+
+# 4. Ensure root account is active and not locked
+passwd -u root 2>/dev/null || true
+chage -E -1 -M -1 root 2>/dev/null || true
+
+# 5. Restart SSH service to apply changes
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart sshd.service || systemctl restart ssh.service
+else
+  service sshd restart || service ssh restart
+fi'`,
+        icon: <KeyIcon className="w-5 h-5" />
+      });
     }
 
     commands.push(
@@ -154,7 +247,7 @@ const TemplateCreator = () => {
       },
       {
         desc: 'Import QCOW2 Disk',
-        cmd: `qm importdisk ${vmId} /root/${osType} ${storage}`,
+        cmd: `qm importdisk ${vmId} ${osType} ${storage}`,
         icon: <CircleStackIcon className="w-5 h-5" />
       },
       {
@@ -305,6 +398,27 @@ const TemplateCreator = () => {
                   </label>
                 </div>
                 <p className="text-xs text-gray-500 ml-7">Enable VM agent service for enhanced management capabilities</p>
+              </div>
+
+              <div className="pt-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="flex items-center text-sm font-semibold text-gray-700">
+                    <KeyIcon className="w-5 h-5 mr-2 text-gray-500" />
+                    Enable Root SSH
+                  </label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="enableRootSsh"
+                      checked={formData.enableRootSsh}
+                      onChange={handleInputChange}
+                      disabled={!formData.enableQemuAgent}
+                      className="sr-only peer"
+                    />
+                    <div className={`w-11 h-6 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!formData.enableQemuAgent ? 'bg-gray-100 cursor-not-allowed' : 'bg-gray-200 peer-checked:bg-[#ec7211] cursor-pointer'}`}></div>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 ml-7">Allow root SSH login (requires QEMU Guest Agent)</p>
               </div>
 
               <div className="pt-4 border-t border-gray-200 mt-4">

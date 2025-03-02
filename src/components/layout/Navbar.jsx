@@ -6,7 +6,8 @@ import {
   XMarkIcon,
   ServerIcon,
   ShieldCheckIcon,
-  CloudIcon
+  CloudIcon,
+  ClipboardIcon
 } from '@heroicons/react/24/outline';
 
 const menuItems = [
@@ -24,6 +25,11 @@ const menuItems = [
     icon: <CloudIcon className="w-5 h-5" />,
     label: "Cloud-Init",
     path: "/cloud-init"
+  },
+  {
+    icon: <ClipboardIcon className="w-5 h-5" />, 
+    label: "Clone Template",
+    path: "/clone-template"
   }
 ];
 
