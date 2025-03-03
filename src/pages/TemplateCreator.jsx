@@ -48,7 +48,7 @@ const TemplateCreator = () => {
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : value;
-    
+
     if (name === 'enableQemuAgent' && !checked) {
       // 如果禁用 QEMU Guest Agent，同时也禁用 Root SSH
       setFormData(prev => ({
@@ -163,73 +163,35 @@ const TemplateCreator = () => {
 
     if (enableRootSsh) {
       commands.push({
-        desc: 'Configure Root SSH Access',
+        desc: 'Configure Root SSH Access (Production Best Practices)',
         cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
-# Detect operating system type
-if [ -f /etc/os-release ]; then
-  . /etc/os-release
-  OS_TYPE=$(echo "$ID" | tr "[:upper:]" "[:lower:]")  # Convert to lowercase using tr
-else
-  OS_TYPE=unknown
-fi
+set -e
 
-# 1. Configure cloud-init (Common settings for all distributions)
-if [ -f /etc/cloud/cloud.cfg ]; then
-  # 1.1 Modify main configuration
-  sed -i "s/disable_root: true/disable_root: false/" /etc/cloud/cloud.cfg
-  sed -i "/^disable_root:.*/d" /etc/cloud/cloud.cfg
-  sed -i "s/ssh_pwauth:.*$/ssh_pwauth: true/" /etc/cloud/cloud.cfg
-  
-  # 1.2 Create high-priority override configuration
-  mkdir -p /etc/cloud/cloud.cfg.d
-  cat > /etc/cloud/cloud.cfg.d/99-enable-root.cfg << EOF
+# 1. Create cloud-init override config
+#    Skip if cloud-init is not installed
+mkdir -p /etc/cloud/cloud.cfg.d
+cat > /etc/cloud/cloud.cfg.d/99-enable-root.cfg << "EOF"
 disable_root: false
 ssh_pwauth: true
+ssh_deletekeys: false
 EOF
+
+# 2. Create SSH config override
+#    Use drop-in file instead of modifying main config
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/99-enable-root.conf << "EOF"
+PermitRootLogin yes
+PasswordAuthentication yes
+EOF
+
+# 3. Configure SELinux for RHEL/CentOS
+if command -v semanage >/dev/null 2>&1 && command -v getenforce >/dev/null 2>&1; then
+  if [ "$(getenforce)" != "Disabled" ]; then
+    semanage boolean -m --on ssh_enable_root_login || true
+  fi
 fi
 
-# 2. SSH Configuration (Base settings)
-cp -a /etc/ssh/sshd_config /etc/ssh/sshd_config.backup-$(date +%Y%m%d)
-
-# 2.1 Enable root login and password authentication
-sed -i "s/^#*PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config
-sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config
-
-# 3. Distribution-specific configurations
-case $OS_TYPE in
-  ubuntu|debian)
-    # 3.1 Ubuntu/Debian specific settings
-    if [ -f /etc/pam.d/sshd ]; then
-      # Ensure correct PAM authentication configuration
-      sed -i "s/^@include common-auth/#@include common-auth/" /etc/pam.d/sshd
-      echo "@include common-auth" >> /etc/pam.d/sshd
-    fi
-    
-    # Handle Ubuntu cloud-init networking configuration
-    if [ -f /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg ]; then
-      mv /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg.disabled
-    fi
-    ;;
-    
-  centos|rocky|almalinux|rhel)
-    # 3.2 RHEL-based systems configuration
-    # Ensure password authentication is enabled in RedHat config
-    if [ -f /etc/cloud/cloud.cfg.d/50-redhat.cfg ]; then
-      sed -i "s/^ssh_pwauth:.*$/ssh_pwauth: true/" /etc/cloud/cloud.cfg.d/50-redhat.cfg
-    fi
-    
-    # Preserve SSH host keys
-    if [ -d /etc/cloud/cloud.cfg.d ]; then
-      echo "ssh_deletekeys: false" > /etc/cloud/cloud.cfg.d/99-ssh-keep-keys.cfg
-    fi
-    ;;
-esac
-
-# 4. Ensure root account is active and not locked
-passwd -u root 2>/dev/null || true
-chage -E -1 -M -1 root 2>/dev/null || true
-
-# 5. Restart SSH service to apply changes
+# 4. Restart SSH service
 if command -v systemctl >/dev/null 2>&1; then
   systemctl restart sshd.service || systemctl restart ssh.service
 else
