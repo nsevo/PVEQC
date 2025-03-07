@@ -136,6 +136,8 @@ const TemplateCreator = () => {
   const generateCommands = () => {
     const { vmId, osType, storage, bridge, enableQemuAgent, enableRootSsh } = formData;
     const osName = osType.split('.')[0].replace(/[^a-zA-Z0-9-]/g, '') + '-template';
+    const needDisableSELinux = osType.startsWith('rocky-') || osType.startsWith('almalinux-');
+    const isRHELBased = needDisableSELinux || osType.startsWith('centos-');
 
     const commands = [
       {
@@ -154,11 +156,42 @@ const TemplateCreator = () => {
     }
 
     if (enableQemuAgent) {
-      commands.push({
-        desc: 'Install & Enable QEMU Guest Agent',
-        cmd: `virt-customize -a ${osType} --install qemu-guest-agent`,
-        icon: <ComputerDesktopIcon className="w-5 h-5" />
-      });
+      if (needDisableSELinux) {
+        commands.push({
+          desc: 'Install & Enable QEMU Guest Agent (Rocky/AlmaLinux)',
+          cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
+set -e
+
+# Disable SELinux
+sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
+
+# Install qemu-guest-agent
+dnf install -y qemu-guest-agent
+
+# Enable qemu-guest-agent service
+systemctl enable qemu-guest-agent.service'`,
+          icon: <ComputerDesktopIcon className="w-5 h-5" />
+        });
+      } else if (osType.startsWith('centos-')) {
+        commands.push({
+          desc: 'Install & Enable QEMU Guest Agent (CentOS)',
+          cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
+set -e
+
+# Install qemu-guest-agent
+dnf install -y qemu-guest-agent
+
+# Enable qemu-guest-agent service
+systemctl enable qemu-guest-agent.service'`,
+          icon: <ComputerDesktopIcon className="w-5 h-5" />
+        });
+      } else {
+        commands.push({
+          desc: 'Install & Enable QEMU Guest Agent',
+          cmd: `virt-customize -a ${osType} --install qemu-guest-agent`,
+          icon: <ComputerDesktopIcon className="w-5 h-5" />
+        });
+      }
     }
 
     if (enableRootSsh) {
