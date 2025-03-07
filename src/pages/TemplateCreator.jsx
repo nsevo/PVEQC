@@ -218,6 +218,14 @@ const TemplateCreator = () => {
       });
     }
 
+    if (osType === 'debian-11.qcow2') {
+      commands.push({
+        desc: 'Remove Persistent Network Rules (Debian 11)',
+        cmd: `virt-customize -a ${osType} --run-command 'ln -s /dev/null /etc/systemd/network/99-default.link'`,
+        icon: <CommandLineIcon className="w-5 h-5" />
+      });
+    }
+
     if (enableQemuAgent) {
       if (needDisableSELinux) {
         commands.push({
