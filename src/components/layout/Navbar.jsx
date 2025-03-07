@@ -6,7 +6,8 @@ import {
   XMarkIcon,
   ServerIcon,
   ShieldCheckIcon,
-  ClipboardIcon
+  ClipboardIcon,
+  QueueListIcon
 } from '@heroicons/react/24/outline';
 
 const menuItems = [
@@ -14,6 +15,11 @@ const menuItems = [
     icon: <DocumentDuplicateIcon className="w-5 h-5" />, 
     label: "Template Generator",
     path: "/template"
+  },
+  { 
+    icon: <QueueListIcon className="w-5 h-5" />, 
+    label: "Batch Template",
+    path: "/batch-template"
   },
   {
     icon: <ShieldCheckIcon className="w-5 h-5" />,

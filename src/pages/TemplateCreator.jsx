@@ -10,9 +10,7 @@ import {
   CheckIcon,
   CommandLineIcon,
   CloudArrowDownIcon,
-  KeyIcon,
-  PlusIcon,
-  QueueListIcon
+  KeyIcon
 } from '@heroicons/react/24/outline';
 
 const TemplateCreator = () => {
@@ -22,8 +20,7 @@ const TemplateCreator = () => {
     storage: 'local-lvm',
     bridge: 'vmbr0',
     enableQemuAgent: true,
-    enableRootSsh: false,
-    autoIncrementVmId: true
+    enableRootSsh: false
   };
 
   const [formData, setFormData] = useState(() => {
@@ -33,11 +30,6 @@ const TemplateCreator = () => {
 
   const [copiedStates, setCopiedStates] = useState({});
   const [mergedCopied, setMergedCopied] = useState(false);
-  const [batchMode, setBatchMode] = useState(false);
-  const [batchTemplates, setBatchTemplates] = useState([]);
-  const [batchMergedCommand, setBatchMergedCommand] = useState('');
-  const [selectedOsTypes, setSelectedOsTypes] = useState({});
-  const [multiSelectOsMode, setMultiSelectOsMode] = useState(false);
 
   useEffect(() => {
     document.title = 'Template Generator | PVEQC';
@@ -58,7 +50,7 @@ const TemplateCreator = () => {
     const newValue = type === 'checkbox' ? checked : value;
 
     if (name === 'enableQemuAgent' && !checked) {
-      // 如果禁用 QEMU Guest Agent，同时也禁用 Root SSH
+      // If QEMU Guest Agent is disabled, also disable Root SSH
       setFormData(prev => ({
         ...prev,
         [name]: newValue,
@@ -192,17 +184,6 @@ const TemplateCreator = () => {
       await navigator.clipboard.writeText(text);
       if (key === 'merged') {
         setMergedCopied(true);
-      } else if (key === 'batchMerged') {
-        setCopiedStates(prev => ({
-          ...prev,
-          [key]: true
-        }));
-        setTimeout(() => {
-          setCopiedStates(prev => ({
-            ...prev,
-            [key]: false
-          }));
-        }, 3000);
       } else {
         setCopiedStates(prev => ({
           ...prev,
@@ -381,294 +362,6 @@ fi'`,
     setMergedCopied(false);
   };
 
-  const toggleBatchMode = () => {
-    setBatchMode(!batchMode);
-    if (!batchMode) {
-      // 进入批量模式，清空之前的批量模板
-      setBatchTemplates([]);
-      setBatchMergedCommand('');
-    }
-  };
-
-  const toggleMultiSelectOsMode = () => {
-    setMultiSelectOsMode(!multiSelectOsMode);
-    // 切换模式时清空已选操作系统
-    if (multiSelectOsMode) {
-      setSelectedOsTypes({});
-    }
-  };
-
-  const handleOsTypeSelect = (osType) => {
-    setSelectedOsTypes(prev => ({
-      ...prev,
-      [osType]: !prev[osType]
-    }));
-  };
-
-  const addMultipleTemplatesToBatch = () => {
-    // 获取所有选中的操作系统
-    const selectedOsArray = Object.keys(selectedOsTypes).filter(os => selectedOsTypes[os]);
-    
-    if (selectedOsArray.length === 0) {
-      alert('Please select at least one operating system');
-      return;
-    }
-
-    // 保存当前的VM ID作为起始ID
-    let currentVmId = parseInt(formData.vmId, 10);
-    const newTemplates = [];
-
-    // 为每个选中的操作系统创建一个模板
-    selectedOsArray.forEach(osType => {
-      const templateData = {
-        ...formData,
-        vmId: currentVmId.toString(),
-        osType,
-        id: Date.now() + Math.random() // 确保ID唯一
-      };
-      
-      newTemplates.push(templateData);
-      
-      // 如果启用了自动递增，VM ID加1
-      if (formData.autoIncrementVmId) {
-        currentVmId += 1;
-      }
-    });
-
-    // 更新批量模板列表
-    const updatedTemplates = [...batchTemplates, ...newTemplates];
-    setBatchTemplates(updatedTemplates);
-    
-    // 如果启用了自动递增，更新表单中的VM ID
-    if (formData.autoIncrementVmId) {
-      setFormData(prev => ({
-        ...prev,
-        vmId: currentVmId.toString()
-      }));
-    }
-    
-    // 清空已选操作系统
-    setSelectedOsTypes({});
-    
-    // 更新批量命令
-    updateBatchCommand(updatedTemplates);
-  };
-
-  const addToBatchTemplates = () => {
-    // 添加当前配置到批量模板列表
-    const newTemplate = { ...formData, id: Date.now() };
-    
-    const updatedTemplates = [...batchTemplates, newTemplate];
-    setBatchTemplates(updatedTemplates);
-    
-    // 如果启用了VM ID自增，则增加VM ID值
-    if (formData.autoIncrementVmId) {
-      // 将当前VM ID转换为数字并加1
-      const currentVmId = parseInt(formData.vmId, 10);
-      const nextVmId = currentVmId + 1;
-      
-      // 更新表单中的VM ID值
-      setFormData(prev => ({
-        ...prev,
-        vmId: nextVmId.toString()
-      }));
-    }
-    
-    // 更新批量命令
-    updateBatchCommand(updatedTemplates);
-  };
-
-  const removeFromBatchTemplates = (id) => {
-    const updatedTemplates = batchTemplates.filter(template => template.id !== id);
-    setBatchTemplates(updatedTemplates);
-    updateBatchCommand(updatedTemplates);
-  };
-
-  const updateBatchCommand = (templates) => {
-    if (templates.length === 0) {
-      setBatchMergedCommand('');
-      return;
-    }
-    
-    // 生成所有模板的命令并合并
-    const allCommands = templates.map(template => {
-      // 不直接修改状态，而是传入模板数据生成命令
-      const templateCommands = generateCommandsForTemplate(template);
-      return templateCommands.map(cmd => cmd.cmd).join(' && ');
-    });
-    
-    setBatchMergedCommand(allCommands.join(' && '));
-  };
-
-  // 为特定模板生成命令而不修改状态
-  const generateCommandsForTemplate = (templateData) => {
-    const { vmId, osType, storage, bridge, enableQemuAgent, enableRootSsh } = templateData;
-    
-    // 安全检查：确保osType存在于osDownloadLinks中
-    if (!osDownloadLinks[osType]) {
-      console.error(`Error: Operating system type "${osType}" does not exist in the supported list`);
-      return [{
-        desc: 'Error',
-        cmd: `# Error: Operating system type "${osType}" is not supported`,
-        icon: <CommandLineIcon className="w-5 h-5" />
-      }];
-    }
-    
-    const osName = osType.split('.')[0].replace(/[^a-zA-Z0-9-]/g, '') + '-template';
-    const needDisableSELinux = osDownloadLinks[osType].needDisableSELinux;
-    const isRHELBased = osDownloadLinks[osType].isRHELBased || false;
-    const packageManager = osDownloadLinks[osType].packageManager;
-
-    const commands = [
-      {
-        desc: 'Download OS Image',
-        cmd: osDownloadLinks[osType].download,
-        icon: <CloudArrowDownIcon className="w-5 h-5" />
-      }
-    ];
-
-    if (enableQemuAgent || enableRootSsh) {
-      commands.push({
-        desc: 'Install libguestfs-tools',
-        cmd: 'apt update && apt install -y libguestfs-tools',
-        icon: <CommandLineIcon className="w-5 h-5" />
-      });
-    }
-
-    if (enableQemuAgent) {
-      if (needDisableSELinux) {
-        commands.push({
-          desc: `Install & Enable QEMU Guest Agent (${osName.split('-')[0].charAt(0).toUpperCase() + osName.split('-')[0].slice(1)})`,
-          cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
-set -e
-
-# Disable SELinux
-sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
-
-# Install qemu-guest-agent
-${packageManager} install -y qemu-guest-agent
-
-# Enable qemu-guest-agent service
-systemctl enable qemu-guest-agent.service'`,
-          icon: <ComputerDesktopIcon className="w-5 h-5" />
-        });
-      } else if (isRHELBased) {
-        commands.push({
-          desc: `Install & Enable QEMU Guest Agent (${osName.split('-')[0].charAt(0).toUpperCase() + osName.split('-')[0].slice(1)})`,
-          cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
-set -e
-
-# Install qemu-guest-agent
-${packageManager} install -y qemu-guest-agent
-
-# Enable qemu-guest-agent service
-systemctl enable qemu-guest-agent.service'`,
-          icon: <ComputerDesktopIcon className="w-5 h-5" />
-        });
-      } else {
-        commands.push({
-          desc: 'Install & Enable QEMU Guest Agent',
-          cmd: `virt-customize -a ${osType} --install qemu-guest-agent`,
-          icon: <ComputerDesktopIcon className="w-5 h-5" />
-        });
-      }
-    }
-
-    if (enableRootSsh) {
-      commands.push({
-        desc: 'Configure Root SSH Access (Production Best Practices)',
-        cmd: `virt-customize -a ${osType} --run-command '#!/bin/bash
-set -e
-
-# 1. Create cloud-init override config
-#    Skip if cloud-init is not installed
-mkdir -p /etc/cloud/cloud.cfg.d
-cat > /etc/cloud/cloud.cfg.d/99-enable-root.cfg << "EOF"
-disable_root: false
-ssh_pwauth: true
-ssh_deletekeys: false
-EOF
-
-# 2. Create SSH config override
-#    Use drop-in file instead of modifying main config
-mkdir -p /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-enable-root.conf << "EOF"
-PermitRootLogin yes
-PasswordAuthentication yes
-EOF
-
-# 3. Configure SELinux for RHEL/CentOS
-if command -v semanage >/dev/null 2>&1 && command -v getenforce >/dev/null 2>&1; then
-  if [ "$(getenforce)" != "Disabled" ]; then
-    semanage boolean -m --on ssh_enable_root_login || true
-  fi
-fi
-
-# 4. Restart SSH service
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart sshd.service || systemctl restart ssh.service
-else
-  service sshd restart || service ssh restart
-fi'`,
-        icon: <KeyIcon className="w-5 h-5" />
-      });
-    }
-
-    commands.push(
-      {
-        desc: 'Create Virtual Machine',
-        cmd: `qm create ${vmId} --name ${osName} --memory 2048 --cores 2 --cpu host --net0 virtio,bridge=${bridge}`,
-        icon: <ServerIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Import QCOW2 Disk',
-        cmd: `qm importdisk ${vmId} ${osType} ${storage}`,
-        icon: <CircleStackIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Configure VirtIO SCSI',
-        cmd: `qm set ${vmId} --scsihw virtio-scsi-pci --scsi0 ${storage}:vm-${vmId}-disk-0`,
-        icon: <CpuChipIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Configure Display',
-        cmd: `qm set ${vmId} --vga virtio --serial0 socket`,
-        icon: <ComputerDesktopIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Enable Cloud-Init',
-        cmd: `qm set ${vmId} --ide2 ${storage}:cloudinit`,
-        icon: <CloudArrowDownIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Configure Cloud-Init User',
-        cmd: `qm set ${vmId} --ciuser root --citype nocloud`,
-        icon: <CloudArrowDownIcon className="w-5 h-5" />
-      },
-      {
-        desc: 'Configure Boot Options',
-        cmd: `qm set ${vmId} --boot c --bootdisk scsi0`,
-        icon: <ServerIcon className="w-5 h-5" />
-      }
-    );
-
-    if (enableQemuAgent) {
-      commands.push({
-        desc: 'Enable QEMU Guest Agent',
-        cmd: `qm set ${vmId} --agent enabled=1`,
-        icon: <ComputerDesktopIcon className="w-5 h-5" />
-      });
-    }
-
-    commands.push({
-      desc: 'Convert to Template',
-      cmd: `qm template ${vmId}`,
-      icon: <ServerIcon className="w-5 h-5" />
-    });
-
-    return commands;
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row lg:space-x-4 space-y-4 lg:space-y-0">
@@ -694,98 +387,28 @@ fi'`,
                 />
               </div>
 
-              {batchMode && (
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="flex items-center text-sm font-semibold text-gray-700">
-                      <PlusIcon className="w-5 h-5 mr-2 text-gray-500" />
-                      自动递增 VM ID
-                    </label>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="autoIncrementVmId"
-                        checked={formData.autoIncrementVmId}
-                        onChange={handleInputChange}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#ec7211]"></div>
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500 ml-7">
-                    Add template to automatically increase VM ID value
-                  </p>
-                </div>
-              )}
-
               <div>
                 <label className="flex items-center text-sm font-semibold text-gray-700 mb-1.5">
                   <CpuChipIcon className="w-5 h-5 mr-2 text-gray-500" />
                   Operating System
                   <span className="ml-2 text-xs text-gray-500 font-normal">Select OS Image</span>
                 </label>
-                {batchMode && (
-                  <div className="mb-2">
-                    <button
-                      onClick={toggleMultiSelectOsMode}
-                      className={`w-full inline-flex items-center justify-center px-3 py-1 border text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-[#ec7211] ${
-                        multiSelectOsMode 
-                          ? 'bg-[#ec7211] text-white border-[#ec7211] hover:bg-[#ec7211]/90' 
-                          : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400'
-                      }`}
-                    >
-                      <QueueListIcon className="w-3 h-3 mr-1" />
-                      {multiSelectOsMode ? 'Exit Multi-select' : 'Enable Multi-select'}
-                    </button>
-                  </div>
-                )}
-                {!batchMode || !multiSelectOsMode ? (
-                  <select
-                    name="osType"
-                    value={formData.osType}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#ec7211] focus:border-[#ec7211] transition-colors duration-200"
-                  >
-                    {osOptions.map(group => (
-                      <optgroup key={group.label} label={group.label}>
-                        {group.options.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto border border-gray-300 rounded">
-                    {osOptions.map(group => (
-                      <div key={group.label} className="border-b border-gray-200 last:border-b-0">
-                        <div className="bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700">
-                          {group.label}
-                        </div>
-                        <div className="divide-y divide-gray-200">
-                          {group.options.map(option => (
-                            <div 
-                              key={option.value} 
-                              className={`flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer ${
-                                selectedOsTypes[option.value] ? 'bg-orange-50' : ''
-                              }`}
-                              onClick={() => handleOsTypeSelect(option.value)}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={!!selectedOsTypes[option.value]}
-                                onChange={() => {}}
-                                className="h-4 w-4 text-[#ec7211] border-gray-300 rounded"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">{option.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <select
+                  name="osType"
+                  value={formData.osType}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#ec7211] focus:border-[#ec7211] transition-colors duration-200"
+                >
+                  {osOptions.map(group => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -870,199 +493,95 @@ fi'`,
                   Clear Configuration
                 </button>
               </div>
-
-              <div className="pt-4 border-t border-gray-200 mt-4">
-                <button
-                  onClick={toggleBatchMode}
-                  className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-[#ec7211] ${
-                    batchMode 
-                      ? 'bg-[#ec7211] text-white border-[#ec7211] hover:bg-[#ec7211]/90' 
-                      : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400'
-                  }`}
-                >
-                  <QueueListIcon className="w-4 h-4 mr-2" />
-                  {batchMode ? 'Exit Batch Mode' : 'Enter Batch Mode'}
-                </button>
-              </div>
-
-              {batchMode && (
-                <div className="pt-4 border-t border-gray-200 mt-4">
-                  <button
-                    onClick={multiSelectOsMode ? addMultipleTemplatesToBatch : addToBatchTemplates}
-                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-[#ec7211] text-sm font-medium text-white bg-[#ec7211] hover:bg-[#ec7211]/90 transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-[#ec7211]"
-                  >
-                    <PlusIcon className="w-4 h-4 mr-2" />
-                    {multiSelectOsMode ? 'Add Selected OS' : 'Add to Batch'}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
         <div className="flex-1">
-          {/* 非批量模式下显示命令列表 */}
-          {!batchMode && (
-            <div className="bg-white border border-gray-200 mb-4">
-              <div className="border-b border-gray-200 px-4 py-3">
-                <h2 className="text-sm font-bold text-gray-900">Command List</h2>
-              </div>
-              <div className="divide-y divide-gray-200">
-                {commands.map((command) => (
-                  <div key={command.desc} className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center">
-                        <span className="text-gray-500 mr-2.5">{command.icon}</span>
-                        <span className="text-sm font-semibold text-gray-700">{command.desc}</span>
-                      </div>
-                      <button
-                        onClick={() => copyToClipboard(command.cmd, command.desc)}
-                        className={`inline-flex items-center px-3 py-1.5 text-sm font-medium transition-all duration-200 border
-                          ${copiedStates[command.desc]
-                            ? 'bg-green-50 text-green-700 border-green-200'
-                            : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200'
-                          }`}
-                      >
-                        {copiedStates[command.desc] ? (
-                          <>
-                            <CheckIcon className="w-4 h-4 mr-1.5" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <ClipboardIcon className="w-4 h-4 mr-1.5" />
-                            Copy
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <div className={`p-4 font-mono text-sm transition-all duration-300 overflow-x-auto whitespace-pre-wrap break-all border
-                      ${copiedStates[command.desc]
-                        ? 'bg-green-100 text-green-800 border-green-300'
-                        : 'bg-gray-50 text-gray-800 border-gray-200'
-                      }`}>
-                      {command.cmd}
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="bg-white border border-gray-200 mb-4">
+            <div className="border-b border-gray-200 px-4 py-3">
+              <h2 className="text-sm font-bold text-gray-900">Command List</h2>
             </div>
-          )}
+            <div className="divide-y divide-gray-200">
+              {commands.map((command) => (
+                <div key={command.desc} className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <span className="text-gray-500 mr-2.5">{command.icon}</span>
+                      <span className="text-sm font-semibold text-gray-700">{command.desc}</span>
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(command.cmd, command.desc)}
+                      className={`inline-flex items-center px-3 py-1.5 text-sm font-medium transition-all duration-200 border
+                        ${copiedStates[command.desc]
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200'
+                        }`}
+                    >
+                      {copiedStates[command.desc] ? (
+                        <>
+                          <CheckIcon className="w-4 h-4 mr-1.5" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <ClipboardIcon className="w-4 h-4 mr-1.5" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className={`p-4 font-mono text-sm transition-all duration-300 overflow-x-auto whitespace-pre-wrap break-all border
+                    ${copiedStates[command.desc]
+                      ? 'bg-green-100 text-green-800 border-green-300'
+                      : 'bg-gray-50 text-gray-800 border-gray-200'
+                    }`}>
+                    {command.cmd}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-          {/* 非批量模式下显示完整执行命令 */}
-          {!batchMode && (
-            <div className="bg-[#232f3e] border border-[#1a1f29]">
-              <div className="px-4 py-3 border-b border-[#2d3952]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <CommandLineIcon className="w-5 h-5 text-gray-400 mr-2.5" />
-                    <h4 className="text-sm font-bold text-white">Complete Execution Command</h4>
-                  </div>
-                  <button
-                    onClick={() => copyToClipboard(mergedCommand, 'merged')}
-                    className={`inline-flex items-center px-4 py-2 text-sm font-medium transition-all duration-200 border
-                      ${mergedCopied
-                        ? 'bg-green-500 text-white border-green-600'
-                        : 'bg-[#ec7211] text-white hover:bg-[#ec7211]/90 border-[#ec7211]'
-                      }`}
-                  >
-                    {mergedCopied ? (
-                      <>
-                        <CheckIcon className="w-4 h-4 mr-2" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <ClipboardIcon className="w-4 h-4 mr-2" />
-                        Copy Full Command
-                      </>
-                    )}
-                  </button>
+          <div className="bg-[#232f3e] border border-[#1a1f29]">
+            <div className="px-4 py-3 border-b border-[#2d3952]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <CommandLineIcon className="w-5 h-5 text-gray-400 mr-2.5" />
+                  <h4 className="text-sm font-bold text-white">Complete Execution Command</h4>
                 </div>
-              </div>
-              <div className="p-4">
-                <div className={`p-4 font-mono text-sm transition-all duration-300 overflow-x-auto whitespace-pre-wrap break-all border
-                  ${mergedCopied
-                    ? 'bg-[#1a202c] text-green-300 border-green-600'
-                    : 'bg-[#1a202c] text-gray-200 border-gray-700/50'
-                  }`}>
-                  {mergedCommand}
-                </div>
+                <button
+                  onClick={() => copyToClipboard(mergedCommand, 'merged')}
+                  className={`inline-flex items-center px-4 py-2 text-sm font-medium transition-all duration-200 border
+                    ${mergedCopied
+                      ? 'bg-green-500 text-white border-green-600'
+                      : 'bg-[#ec7211] text-white hover:bg-[#ec7211]/90 border-[#ec7211]'
+                    }`}
+                >
+                  {mergedCopied ? (
+                    <>
+                      <CheckIcon className="w-4 h-4 mr-2" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardIcon className="w-4 h-4 mr-2" />
+                      Copy Full Command
+                    </>
+                  )}
+                </button>
               </div>
             </div>
-          )}
-          
-          {/* 批量模式下显示模板列表 */}
-          {batchMode && batchTemplates.length > 0 && (
-            <div className="bg-white border border-gray-200 mb-4">
-              <div className="border-b border-gray-200 px-4 py-3">
-                <h2 className="text-sm font-bold text-gray-900">Batch Template List ({batchTemplates.length})</h2>
-              </div>
-              <div className="divide-y divide-gray-200">
-                {batchTemplates.map((template, index) => (
-                  <div key={template.id} className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center">
-                        <span className="text-gray-700 font-medium">Template #{index + 1}</span>
-                        <span className="ml-2 text-sm text-gray-500">
-                          VM ID: {template.vmId}, OS: {template.osType.split('.')[0]}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => removeFromBatchTemplates(template.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <TrashIcon className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+            <div className="p-4">
+              <div className={`p-4 font-mono text-sm transition-all duration-300 overflow-x-auto whitespace-pre-wrap break-all border
+                ${mergedCopied
+                  ? 'bg-[#1a202c] text-green-300 border-green-600'
+                  : 'bg-[#1a202c] text-gray-200 border-gray-700/50'
+                }`}>
+                {mergedCommand}
               </div>
             </div>
-          )}
-
-          {/* 批量模式下显示批量命令 */}
-          {batchMode && batchTemplates.length > 0 && (
-            <div className="bg-[#232f3e] border border-[#1a1f29]">
-              <div className="px-4 py-3 border-b border-[#2d3952]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <CommandLineIcon className="w-5 h-5 text-gray-400 mr-2.5" />
-                    <h4 className="text-sm font-bold text-white">Complete Batch Execution Command ({batchTemplates.length} Templates)</h4>
-                  </div>
-                  <button
-                    onClick={() => copyToClipboard(batchMergedCommand, 'batchMerged')}
-                    className={`inline-flex items-center px-4 py-2 text-sm font-medium transition-all duration-200 border
-                      ${copiedStates['batchMerged']
-                        ? 'bg-green-500 text-white border-green-600'
-                        : 'bg-[#ec7211] text-white hover:bg-[#ec7211]/90 border-[#ec7211]'
-                      }`}
-                  >
-                    {copiedStates['batchMerged'] ? (
-                      <>
-                        <CheckIcon className="w-4 h-4 mr-2" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <ClipboardIcon className="w-4 h-4 mr-2" />
-                        Copy Batch Command
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="p-4">
-                <div className={`p-4 font-mono text-sm transition-all duration-300 overflow-x-auto whitespace-pre-wrap break-all border
-                  ${copiedStates['batchMerged']
-                    ? 'bg-[#1a202c] text-green-300 border-green-600'
-                    : 'bg-[#1a202c] text-gray-200 border-gray-700/50'
-                  }`}>
-                  {batchMergedCommand}
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
