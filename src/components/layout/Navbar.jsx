@@ -6,7 +6,6 @@ import {
   XMarkIcon,
   ServerIcon,
   ShieldCheckIcon,
-  CloudIcon,
   ClipboardIcon
 } from '@heroicons/react/24/outline';
 
@@ -20,11 +19,6 @@ const menuItems = [
     icon: <ShieldCheckIcon className="w-5 h-5" />,
     label: "Firewall Rules",
     path: "/firewall"
-  },
-  {
-    icon: <CloudIcon className="w-5 h-5" />,
-    label: "Cloud-Init",
-    path: "/cloud-init"
   },
   {
     icon: <ClipboardIcon className="w-5 h-5" />, 
