@@ -258,6 +258,9 @@ const BatchTemplateCreator = () => {
     setBatchMergedCommand('');
     setCopiedStates({});
     
+    // Clear all OS selection states
+    setSelectedOsTypes({});
+    
     // Restore VM ID in the form to the original value
     const savedConfig = localStorage.getItem('batchConfig');
     const config = savedConfig ? JSON.parse(savedConfig) : defaultFormData;
@@ -266,9 +269,6 @@ const BatchTemplateCreator = () => {
       ...prev,
       vmId: config.vmId
     }));
-    
-    // Keep all selected system states unchanged
-    // Don't modify selectedOsTypes, ensuring each system's uniqueness
   };
   
   // Clear all batch settings including configuration
@@ -876,7 +876,7 @@ fi'`,
                     <InformationCircleIcon className="w-3 h-3 ml-1 text-gray-400" />
                   </button>
                   <div className="absolute right-0 top-full mt-1 w-48 bg-white shadow-lg rounded border border-gray-200 p-2 text-xs text-gray-600 hidden group-hover:block z-10">
-                    Only clear the list, will not cancel system selection state
+                    Clear list and remove all system selections
                   </div>
                 </div>
               )}
